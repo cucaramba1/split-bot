@@ -8,6 +8,7 @@ from pathlib import Path
 
 from splitbot.config import NAMES
 from splitbot.money import Expense, Transfer
+from splitbot.queues import equalize_offsets
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS members(tg_id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL);
@@ -130,6 +131,20 @@ class DB:
             if r["member"] in out:
                 out[r["member"]] += r["base"]
         return out
+
+    def queue_last(self, queue: str) -> dict[str, int]:
+        """Номер последнего хода каждого участника (turns.id, больше = свежее)."""
+        return {r["member"]: r["m"] for r in
+                self.c.execute("SELECT member, MAX(id) m FROM turns WHERE queue=? GROUP BY member", (queue,))}
+
+    def seed_queue(self, queue: str, order: list[str]) -> None:
+        """Задать порядок: order[0] следующий, дальше order[1], order[2]. Выравнивает счётчики
+        и вписывает стартовую историю (turns без черновика, undo их не трогает)."""
+        offsets = equalize_offsets(self.queue_counts(queue))
+        self.add_queue_base(queue, offsets)
+        with self.c:
+            for who in order:  # самый старый ход у того, кто идёт первым
+                self.c.execute("INSERT INTO turns(draft_id, queue, member) VALUES(NULL,?,?)", (queue, who))
 
     def add_queue_base(self, queue: str, offsets: dict[str, int]) -> None:
         with self.c:

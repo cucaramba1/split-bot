@@ -1,5 +1,6 @@
 from splitbot.db import DB
 from splitbot.money import Transfer
+from splitbot.queues import next_turn
 
 PAYLOAD = {"payer": "Некит",
            "items": [{"title": "кофе", "amount": 120000, "split": ["Некит", "Антон", "Полина"]}],
@@ -53,3 +54,30 @@ def test_mark_paid_once_and_only_parties(tmp_path):
     assert db.mark_paid(i, "Антон") == Transfer("Антон", "Некит", 40000)
     assert db.mark_paid(i, "Антон") is None
     assert len(db.all_paid()) == 1
+
+
+def _turn(db, queue, who):
+    d = db.create_draft(who, {"payer": who, "items": [], "turns": [{"queue": queue, "who": who}]})
+    db.save_draft(d)
+    return d
+
+
+def test_seed_queue_sets_cycle_anton_polina_nekit(tmp_path):
+    db = mk(tmp_path)
+    for who in ("Некит", "Некит", "Антон"):   # неровная история до настройки
+        _turn(db, "water", who)
+    db.seed_queue("water", ["Антон", "Полина", "Некит"])
+    got = []
+    for _ in range(4):
+        who = next_turn(db.queue_counts("water"), db.queue_last("water"))
+        got.append(who)
+        _turn(db, "water", who)
+    assert got == ["Антон", "Полина", "Некит", "Антон"]
+
+
+def test_seed_survives_undo_of_real_turn(tmp_path):
+    db = mk(tmp_path)
+    db.seed_queue("bike", ["Полина", "Некит", "Антон"])
+    d = _turn(db, "bike", "Полина")
+    db.undo_draft(d)
+    assert next_turn(db.queue_counts("bike"), db.queue_last("bike")) == "Полина"
