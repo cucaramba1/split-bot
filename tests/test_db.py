@@ -98,3 +98,15 @@ def test_sync_pay_items_reuses_and_drops_stale(tmp_path):
     # оплаченное не трогаем
     db.sync_pay_items([])
     assert db.c.execute("SELECT COUNT(*) FROM pay_items").fetchone()[0] == 1
+
+
+def test_unmark_paid_only_parties_and_restores_debt(tmp_path):
+    db = DB(tmp_path / "u.db")
+    i = db.create_pay_item(Transfer("Антон", "Некит", 40_000))
+    assert db.unmark_paid(i, "Полина") is False          # не из пары
+    assert db.unmark_paid(i, "Антон") is False           # ещё не оплачено
+    db.mark_paid(i, "Некит")
+    assert len(db.all_paid()) == 1
+    assert db.unmark_paid(i, "Полина") is False
+    assert db.unmark_paid(i, "Антон") is True
+    assert db.all_paid() == []

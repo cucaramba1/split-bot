@@ -42,6 +42,7 @@ case "${1:-install}" in
     [[ -x "$PY" ]] || uv sync
     write_plist
     launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+    launchctl enable "$DOMAIN/$LABEL"  # после прошлого install сервис disabled, bootstrap без enable падает
     launchctl bootstrap "$DOMAIN" "$PLIST"
     # enable переживает перезагрузку и ломает очередь boot-stagger: сразу выключаем автозапуск при логине
     launchctl disable "$DOMAIN/$LABEL"

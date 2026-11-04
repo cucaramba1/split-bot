@@ -1,6 +1,7 @@
 """Логика бота без aiogram: проверяется тестами, bot.py только тонкий слой."""
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -24,6 +25,7 @@ class Reply:
 class Service:
     def __init__(self, s, db: DB, parse_fn, transcribe_fn):
         self.s, self.db, self.parse_fn, self.transcribe_fn = s, db, parse_fn, transcribe_fn
+        self._parse_lock = asyncio.Lock()  # один claude -p за раз: лимит памяти сторожа 600 МБ
 
     # регистрация
     def join(self, tg_id: int, name: str) -> Reply | None:
@@ -42,7 +44,8 @@ class Service:
         author = self.db.member_name(tg_id)
         if author is None or not should_parse(text):
             return None
-        p: Parsed = await self.parse_fn(text, author)
+        async with self._parse_lock:
+            p: Parsed = await self.parse_fn(text, author)
         if p.none:
             return None
         did = self.db.create_draft(author, {"payer": author, "items": p.items, "turns": p.turns,
@@ -92,6 +95,12 @@ class Service:
         if t is None:
             return "Уже отмечено или это не твой перевод"
         return f"✅ {t.frm} → {t.to}: {fmt_vnd(t.amount)} оплачено"
+
+    def unpaid(self, tg_id: int, item_id: int) -> str:
+        name = self.db.member_name(tg_id)
+        if not name or not self.db.unmark_paid(item_id, name):
+            return "Уже снято или это не твой перевод"
+        return "↩️ Отметка снята, долг снова виден в /balance"
 
     # очереди
     def _next(self, queue: str) -> str:

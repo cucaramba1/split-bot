@@ -141,7 +141,9 @@ def build_router(s: Settings, svc: Service) -> Router:
     async def pd(c: CallbackQuery):
         res = svc.paid(c.from_user.id, int(c.data[3:]))
         if res.startswith("✅"):
-            await c.message.answer(res)  # кнопки остальных переводов остаются на месте
+            undo_kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="↩️ Не оплачено", callback_data=f"up:{c.data[3:]}")]])
+            await c.message.answer(res, reply_markup=undo_kb)  # ошибочный тап можно снять
             kb = c.message.reply_markup
             rows = [row for row in (kb.inline_keyboard if kb else []) if row[0].callback_data != c.data]
             try:
@@ -149,6 +151,18 @@ def build_router(s: Settings, svc: Service) -> Router:
                                                   if rows else None)
             except TelegramBadRequest as e:
                 log.warning("кнопки не обновить: %s", e)
+            await c.answer()
+        else:
+            await c.answer(res, show_alert=True)
+
+    @r.callback_query(F.data.startswith("up:"))
+    async def up(c: CallbackQuery):
+        res = svc.unpaid(c.from_user.id, int(c.data[3:]))
+        if res.startswith("↩️"):
+            try:
+                await c.message.edit_text(f"{c.message.text}\n\n{res}", reply_markup=None)
+            except TelegramBadRequest as e:
+                log.warning("сообщение не отредактировать: %s", e)
             await c.answer()
         else:
             await c.answer(res, show_alert=True)

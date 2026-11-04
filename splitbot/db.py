@@ -188,6 +188,14 @@ class DB:
                 return None
         return Transfer(r["frm"], r["to_"], r["amount"])
 
+    def unmark_paid(self, item_id: int, by: str) -> bool:
+        """Снять ошибочную отметку «оплачено»; может тот, кто платит, или тот, кто получает."""
+        with self.c:
+            cur = self.c.execute(
+                "UPDATE pay_items SET paid_by=NULL, paid_at=NULL WHERE id=? AND paid_by IS NOT NULL "
+                "AND (frm=? OR to_=?)", (item_id, by, by))
+        return cur.rowcount > 0
+
     # kv
     def kv_get(self, key: str) -> str | None:
         r = self.c.execute("SELECT value FROM kv WHERE key=?", (key,)).fetchone()

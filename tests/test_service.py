@@ -186,3 +186,36 @@ def draft_turn(svc, queue, who):
     svc.parse_fn.parsed = Parsed(turns=[{"queue": queue, "who": who}])
     tg = {"Некит": N, "Антон": A, "Полина": P}[who]
     return run(svc.handle_text(tg, "заправил байк"))
+
+
+def test_unpay_returns_debt(tmp_path):
+    svc, db, _ = make(tmp_path)
+    _, did = draft(svc)
+    svc.confirm(N, did)
+    r = svc.balance()
+    item = next(int(b.callback_data[3:]) for row in r.kb.inline_keyboard for b in row if "Антон → Некит" in b.text)
+    assert svc.paid(P, item).startswith("Уже")            # Полина не из пары
+    assert svc.paid(N, item).startswith("✅")
+    assert "Антон → Некит" not in svc.balance().text
+    assert svc.unpaid(P, item).startswith("Уже")
+    assert svc.unpaid(A, item).startswith("↩️")
+    assert "Антон → Некит: 40 000" in svc.balance().text
+
+
+def test_parse_calls_are_serialized(tmp_path):
+    active = {"now": 0, "max": 0}
+
+    async def slow(text, author):
+        active["now"] += 1
+        active["max"] = max(active["max"], active["now"])
+        await asyncio.sleep(0.02)
+        active["now"] -= 1
+        return Parsed(none=True)
+
+    svc, db, _ = make(tmp_path)
+    svc.parse_fn = slow
+
+    async def go():
+        await asyncio.gather(*(svc.handle_text(N, f"кофе {i}0к") for i in range(4)))
+    asyncio.run(go())
+    assert active["max"] == 1
