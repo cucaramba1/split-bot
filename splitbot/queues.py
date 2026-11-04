@@ -15,3 +15,11 @@ def equalize_offsets(counts: dict[str, int]) -> dict[str, int]:
     """Поправки, после которых у всех счётчик равен максимальному. Дальше порядок задаёт история ходов."""
     m = max(counts.get(n, 0) for n in NAMES)
     return {n: m - counts.get(n, 0) for n in NAMES}
+
+
+CYCLE: tuple[str, ...] = ("Антон", "Полина", "Некит")  # порядок кругов, решение Некита 04.11
+
+
+def cycle_from(name: str) -> list[str]:
+    i = CYCLE.index(name)
+    return list(CYCLE[i:] + CYCLE[:i])

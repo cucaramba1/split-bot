@@ -21,3 +21,10 @@ def test_tie_goes_to_longest_idle():
 def test_equalize_offsets_lifts_everyone_to_max():
     c = {"Некит": 3, "Антон": 1, "Полина": 2}
     assert equalize_offsets(c) == {"Некит": 0, "Антон": 2, "Полина": 1}
+
+
+def test_cycle_from_follows_anton_polina_nekit():
+    from splitbot.queues import cycle_from
+    assert cycle_from("Антон") == ["Антон", "Полина", "Некит"]
+    assert cycle_from("Полина") == ["Полина", "Некит", "Антон"]
+    assert cycle_from("Некит") == ["Некит", "Антон", "Полина"]

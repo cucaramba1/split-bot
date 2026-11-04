@@ -158,6 +158,25 @@ class DB:
             cur = self.c.execute("INSERT INTO pay_items(frm, to_, amount) VALUES(?,?,?)", (t.frm, t.to, t.amount))
         return cur.lastrowid
 
+    def sync_pay_items(self, transfers: list[Transfer]) -> list[tuple[int, Transfer]]:
+        """Привести неоплаченные переводы к текущему расчёту: совпавшие переиспользуем, лишние удаляем."""
+        out: list[tuple[int, Transfer]] = []
+        with self.c:
+            old = [(r["id"], Transfer(r["frm"], r["to_"], r["amount"])) for r in
+                   self.c.execute("SELECT * FROM pay_items WHERE paid_by IS NULL ORDER BY id")]
+            for t in transfers:
+                hit = next((o for o in old if o[1] == t), None)
+                if hit:
+                    old.remove(hit)
+                    out.append(hit)
+                else:
+                    cur = self.c.execute("INSERT INTO pay_items(frm, to_, amount) VALUES(?,?,?)",
+                                         (t.frm, t.to, t.amount))
+                    out.append((cur.lastrowid, t))
+            for i, _ in old:
+                self.c.execute("DELETE FROM pay_items WHERE id=? AND paid_by IS NULL", (i,))
+        return out
+
     def mark_paid(self, item_id: int, by: str) -> Transfer | None:
         with self.c:
             r = self.c.execute("SELECT * FROM pay_items WHERE id=?", (item_id,)).fetchone()

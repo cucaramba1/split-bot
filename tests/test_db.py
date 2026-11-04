@@ -81,3 +81,20 @@ def test_seed_survives_undo_of_real_turn(tmp_path):
     d = _turn(db, "bike", "Полина")
     db.undo_draft(d)
     assert next_turn(db.queue_counts("bike"), db.queue_last("bike")) == "Полина"
+
+
+def test_sync_pay_items_reuses_and_drops_stale(tmp_path):
+    from splitbot.money import Transfer
+    db = DB(tmp_path / "s.db")
+    a = Transfer("Антон", "Некит", 40_000)
+    b = Transfer("Полина", "Некит", 40_000)
+    first = db.sync_pay_items([a, b])
+    again = db.sync_pay_items([a, b])
+    assert [i for i, _ in first] == [i for i, _ in again]
+    only_a = db.sync_pay_items([a])
+    assert [t for _, t in only_a] == [a] and only_a[0][0] == first[0][0]
+    assert db.c.execute("SELECT COUNT(*) FROM pay_items").fetchone()[0] == 1
+    db.mark_paid(only_a[0][0], "Антон")
+    # оплаченное не трогаем
+    db.sync_pay_items([])
+    assert db.c.execute("SELECT COUNT(*) FROM pay_items").fetchone()[0] == 1
