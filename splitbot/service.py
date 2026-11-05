@@ -49,7 +49,7 @@ class Service:
         if p.none:
             return None
         did = self.db.create_draft(author, {"payer": author, "items": p.items, "turns": p.turns,
-                                            "question": p.question})
+                                            "payments": p.payments, "question": p.question})
         return Reply(cards.draft_text(author, p), cards.draft_kb(did, bool(p.question))), did
 
     def _own_draft(self, tg_id: int, draft_id: int) -> tuple[dict | None, str | None]:
@@ -122,7 +122,8 @@ class Service:
         if did is None:
             return Reply("Нечего отменять")
         p = self.db.get_draft(did)["payload"]
-        body = cards.draft_text(name, Parsed(items=p.get("items", []), turns=p.get("turns", [])))
+        body = cards.draft_text(name, Parsed(items=p.get("items", []), turns=p.get("turns", []),
+                                         payments=p.get("payments", [])))
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="↩️ Удалить", callback_data=f"ud:{did}")]])
         return Reply(f"Удалить последнюю запись?\n{body}", kb)

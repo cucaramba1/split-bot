@@ -41,6 +41,9 @@ class DB:
         self.c.row_factory = sqlite3.Row
         self.c.execute("PRAGMA journal_mode=WAL")
         self.c.executescript(SCHEMA)
+        cols = {r["name"] for r in self.c.execute("PRAGMA table_info(pay_items)")}
+        if "draft_id" not in cols:  # миграция живой базы: оплаты из черновиков погашения
+            self.c.execute("ALTER TABLE pay_items ADD COLUMN draft_id INTEGER")
         self.c.commit()
 
     # участники
@@ -88,6 +91,9 @@ class DB:
                 self.c.execute("INSERT INTO expenses(draft_id, payer, title, amount, split) VALUES(?,?,?,?,?)",
                                (id, p["payer"], it["title"], it["amount"],
                                 json.dumps(it["split"], ensure_ascii=False)))
+            for pm in p.get("payments", []):  # погашение сразу оплачено, плательщик = автор карточки
+                self.c.execute("INSERT INTO pay_items(frm, to_, amount, paid_by, paid_at, draft_id) "
+                               "VALUES(?,?,?,?,?,?)", (pm["frm"], pm["to"], pm["amount"], p["payer"], _now(), id))
             for t in p.get("turns", []):
                 self.c.execute("INSERT INTO turns(draft_id, queue, member) VALUES(?,?,?)",
                                (id, t["queue"], t["who"]))
@@ -110,12 +116,23 @@ class DB:
                 return False
             self.c.execute("DELETE FROM expenses WHERE draft_id=?", (id,))
             self.c.execute("DELETE FROM turns WHERE draft_id=?", (id,))
+            self.c.execute("DELETE FROM pay_items WHERE draft_id=?", (id,))
         return True
 
     # деньги
     def all_expenses(self) -> list[Expense]:
         return [Expense(r["payer"], r["amount"], tuple(json.loads(r["split"])))
                 for r in self.c.execute("SELECT * FROM expenses ORDER BY id")]
+
+    def add_opening_debt(self, frm: str, to: str, amount: int) -> bool:
+        """Стартовый долг frm → to: трата без черновика (платил кредитор, делим на должника). Повтор не пишем."""
+        title = f"Стартовый долг {frm} → {to}"
+        with self.c:
+            if self.c.execute("SELECT 1 FROM expenses WHERE draft_id IS NULL AND title=?", (title,)).fetchone():
+                return False
+            self.c.execute("INSERT INTO expenses(draft_id, payer, title, amount, split) VALUES(NULL,?,?,?,?)",
+                           (to, title, amount, json.dumps([frm], ensure_ascii=False)))
+        return True
 
     def all_paid(self) -> list[Transfer]:
         return [Transfer(r["frm"], r["to_"], r["amount"])

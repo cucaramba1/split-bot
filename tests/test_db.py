@@ -110,3 +110,44 @@ def test_unmark_paid_only_parties_and_restores_debt(tmp_path):
     assert db.unmark_paid(i, "Полина") is False
     assert db.unmark_paid(i, "Антон") is True
     assert db.all_paid() == []
+
+
+def test_opening_debt_counts_in_net_and_survives_undo(tmp_path):
+    from splitbot.money import net_balances
+    db = mk(tmp_path)
+    db.add_opening_debt("Некит", "Полина", 10_900_000)
+    db.add_opening_debt("Некит", "Антон", 75_000)
+    net = net_balances(db.all_expenses(), db.all_paid())
+    assert net == {"Некит": -10_975_000, "Антон": 75_000, "Полина": 10_900_000}
+    assert db.last_saved_draft("Некит") is None  # undo до стартового долга не дотянется
+
+
+def test_opening_debt_idempotent(tmp_path):
+    db = mk(tmp_path)
+    assert db.add_opening_debt("Некит", "Антон", 75_000) is True
+    assert db.add_opening_debt("Некит", "Антон", 75_000) is False
+    assert len(db.all_expenses()) == 1
+
+
+def test_payment_saved_as_paid_and_undone(tmp_path):
+    db = mk(tmp_path)
+    d = db.create_draft("Некит", {"payer": "Некит", "items": [], "turns": [],
+                                  "payments": [{"frm": "Некит", "to": "Антон", "amount": 50_000}]})
+    assert db.all_paid() == []
+    assert db.save_draft(d) is True
+    assert db.all_paid() == [Transfer("Некит", "Антон", 50_000)]
+    assert db.undo_draft(d) is True
+    assert db.all_paid() == []
+
+
+def test_old_db_without_draft_id_column_migrates(tmp_path):
+    import sqlite3
+    p = tmp_path / "old.db"
+    c = sqlite3.connect(p)
+    c.execute("CREATE TABLE pay_items(id INTEGER PRIMARY KEY AUTOINCREMENT, frm TEXT NOT NULL, "
+              "to_ TEXT NOT NULL, amount INTEGER NOT NULL, paid_by TEXT, paid_at TEXT)")
+    c.execute("INSERT INTO pay_items(frm,to_,amount,paid_by) VALUES('Антон','Некит',1000,'Антон')")
+    c.commit()
+    c.close()
+    db = DB(p)
+    assert db.all_paid() == [Transfer("Антон", "Некит", 1000)]

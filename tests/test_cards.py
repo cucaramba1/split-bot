@@ -105,3 +105,8 @@ def test_stt_empty_key_raises(tmp_path):
     audio.write_bytes(b"OggS")
     with pytest.raises(RuntimeError):
         asyncio.run(stt.transcribe(_settings(tmp_path, key=""), audio))
+
+
+def test_draft_text_shows_payment():
+    t = cards.draft_text("Некит", Parsed(payments=[{"frm": "Некит", "to": "Антон", "amount": 50_000}]))
+    assert "Некит → Антон" in t and "50" in t

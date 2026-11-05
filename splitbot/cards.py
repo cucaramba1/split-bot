@@ -19,6 +19,8 @@ def draft_text(author: str, p: Parsed) -> str:
         for it in p.items:
             lines.append(f"  {it['title']}  {fmt_vnd(it['amount'])}  {_who(it['split'])}")
         lines.append(f"Итого {fmt_vnd(sum(it['amount'] for it in p.items))}")
+    for pm in p.payments:
+        lines.append(f"💸 Погашение: {pm['frm']} → {pm['to']}  {fmt_vnd(pm['amount'])}")
     for t in p.turns:
         lines.append(f"🔁 {QUEUES[t['queue']]}: {t['who']}")
     if p.question:

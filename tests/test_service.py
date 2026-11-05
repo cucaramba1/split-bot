@@ -219,3 +219,19 @@ def test_parse_calls_are_serialized(tmp_path):
         await asyncio.gather(*(svc.handle_text(N, f"кофе {i}0к") for i in range(4)))
     asyncio.run(go())
     assert active["max"] == 1
+
+
+def test_repayment_flow(tmp_path):
+    from splitbot.money import net_balances
+    svc, db, _ = make(tmp_path, Parsed(payments=[{"frm": "Некит", "to": "Полина", "amount": 900_000}]))
+    db.add_opening_debt("Некит", "Полина", 10_900_000)
+    reply, did = draft(svc)
+    assert "Некит → Полина" in reply.text
+    assert svc.confirm(A, did) != "✅ Записано"  # чужой тап
+    assert svc.confirm(N, did).startswith("✅")
+    assert net_balances(db.all_expenses(), db.all_paid())["Полина"] == 10_000_000
+    assert svc.confirm(N, did) == "Уже записано"  # двойной тап не гасит дважды
+    assert net_balances(db.all_expenses(), db.all_paid())["Полина"] == 10_000_000
+    assert "Некит → Полина" in svc.undo_ask(N).text
+    assert svc.undo(N, did) == "↩️ Удалено"
+    assert net_balances(db.all_expenses(), db.all_paid())["Полина"] == 10_900_000
