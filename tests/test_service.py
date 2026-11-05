@@ -104,7 +104,8 @@ def test_balance_and_paid(tmp_path):
     svc.confirm(N, did)
     r = svc.balance()
     assert "Антон → Некит: 40 000" in r.text
-    items = {b.text: b.callback_data for row in r.kb.inline_keyboard for b in row}
+    assert [b.callback_data for row in r.kb.inline_keyboard for b in row] == ["pm:open"]  # одна кнопка, без мисклика
+    items = {b.text: b.callback_data for row in svc.pay_menu().kb.inline_keyboard for b in row}
     anton = next(v for k, v in items.items() if "Антон → Некит" in k)
     item = int(anton.split(":")[1])
     assert "не твой" in svc.paid(P, item)
@@ -192,7 +193,7 @@ def test_unpay_returns_debt(tmp_path):
     svc, db, _ = make(tmp_path)
     _, did = draft(svc)
     svc.confirm(N, did)
-    r = svc.balance()
+    r = svc.pay_menu()
     item = next(int(b.callback_data[3:]) for row in r.kb.inline_keyboard for b in row if "Антон → Некит" in b.text)
     assert svc.paid(P, item).startswith("Уже")            # Полина не из пары
     assert svc.paid(N, item).startswith("✅")
@@ -267,3 +268,26 @@ def test_queue_buttons_and_done_flow(tmp_path):
 def test_queue_view_unknown_queue(tmp_path):
     svc, _, _ = make(tmp_path)
     assert svc.queue_view("zzz") is None
+
+
+def test_pay_menu_has_back_and_empty_balance_has_no_buttons(tmp_path):
+    svc, db, _ = make(tmp_path)
+    assert svc.balance().kb is None and svc.pay_menu() is None
+    _, did = draft(svc)
+    svc.confirm(N, did)
+    rows = svc.pay_menu().kb.inline_keyboard
+    assert rows[-1][0].callback_data == "pm:back"
+    assert all(r[0].callback_data.startswith("pd:") for r in rows[:-1]) and len(rows) == 3
+
+
+def test_expense_paid_by_another_person(tmp_path):
+    from splitbot.money import net_balances
+    items = [{"title": "ужин", "amount": 150_000, "split": ALL, "payer": "Антон"}]
+    svc, db, _ = make(tmp_path, Parsed(items=items))
+    reply, did = draft(svc, tg=N)  # говорит Некит, платил Антон
+    assert "Антон заплатил" in reply.text
+    assert svc.confirm(N, did).startswith("✅")
+    net = net_balances(db.all_expenses(), db.all_paid())
+    assert net == {"Некит": -50_000, "Антон": 100_000, "Полина": -50_000}
+    assert svc.undo(N, did) == "↩️ Удалено"
+    assert db.all_expenses() == []

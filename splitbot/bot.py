@@ -153,6 +153,19 @@ def build_router(s: Settings, svc: Service) -> Router:
     async def ud(c: CallbackQuery):
         await _finish(c, svc.undo(c.from_user.id, int(c.data[3:])))
 
+    @r.callback_query(F.data.in_({"pm:open", "pm:back"}))
+    async def pay_menu(c: CallbackQuery):
+        if not me(c):
+            return await c.answer()
+        rep = svc.pay_menu() if c.data == "pm:open" else svc.balance()
+        if rep is None:
+            return await c.answer("Все долги закрыты", show_alert=True)
+        try:
+            await c.message.edit_reply_markup(reply_markup=rep.kb)  # текст остаётся, меняются только кнопки
+        except TelegramBadRequest as e:
+            log.info("кнопки не обновить: %s", e)
+        await c.answer()
+
     @r.callback_query(F.data.startswith("pd:"))
     async def pd(c: CallbackQuery):
         res = svc.paid(c.from_user.id, int(c.data[3:]))
@@ -162,6 +175,8 @@ def build_router(s: Settings, svc: Service) -> Router:
             await c.message.answer(res, reply_markup=undo_kb)  # ошибочный тап можно снять
             kb = c.message.reply_markup
             rows = [row for row in (kb.inline_keyboard if kb else []) if row[0].callback_data != c.data]
+            if all(row[0].callback_data.startswith("pm:") for row in rows):
+                rows = []  # остался один «Назад»: переводов больше нет
             try:
                 await c.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
                                                   if rows else None)

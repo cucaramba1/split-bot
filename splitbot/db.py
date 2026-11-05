@@ -89,7 +89,7 @@ class DB:
             p = json.loads(r["payload"])
             for it in p.get("items", []):
                 self.c.execute("INSERT INTO expenses(draft_id, payer, title, amount, split) VALUES(?,?,?,?,?)",
-                               (id, p["payer"], it["title"], it["amount"],
+                               (id, it.get("payer") or p["payer"], it["title"], it["amount"],
                                 json.dumps(it["split"], ensure_ascii=False)))
             for pm in p.get("payments", []):  # погашение сразу оплачено, плательщик = автор карточки
                 self.c.execute("INSERT INTO pay_items(frm, to_, amount, paid_by, paid_at, draft_id) "

@@ -12,8 +12,8 @@ def raw(items=None, turns=None, kind="expenses", question=None):
     return {"kind": kind, "items": items or [], "turns": turns or [], "question": question}
 
 
-def item(amount=1000, split=None, title="кофе"):
-    return {"title": title, "amount": amount, "split": split if split is not None else ALL}
+def item(amount=1000, split=None, title="кофе", **kw):
+    return {"title": title, "amount": amount, "split": split if split is not None else ALL, **kw}
 
 
 def test_should_parse_ignores_chatter():
@@ -98,3 +98,14 @@ def test_payment_rejects_bad_input():
         r["payments"] = [bad]
         p = validate(r, "Некит")
         assert p.payments == [] and p.question, bad
+
+
+def test_item_payer_defaults_to_author_and_accepts_other():
+    p = validate(raw([item(150_000, payer="Антон"), item(1000, payer=""), item(2000)]), "Некит")
+    assert [i["payer"] for i in p.items] == ["Антон", "Некит", "Некит"]
+    assert p.question is None
+
+
+def test_item_unknown_payer_asks():
+    p = validate(raw([item(1000, payer="Вася")]), "Некит")
+    assert p.question and "Вася" in p.question

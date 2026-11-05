@@ -14,11 +14,14 @@ def _who(split: list[str]) -> str:
 
 def draft_text(author: str, p: Parsed) -> str:
     lines: list[str] = []
-    if p.items:
-        lines.append(f"{author} заплатил:")
-        for it in p.items:
+    by_payer: dict[str, list[dict]] = {}
+    for it in p.items:
+        by_payer.setdefault(it.get("payer") or author, []).append(it)
+    for payer, its in by_payer.items():
+        lines.append(f"{payer} заплатил:")
+        for it in its:
             lines.append(f"  {it['title']}  {fmt_vnd(it['amount'])}  {_who(it['split'])}")
-        lines.append(f"Итого {fmt_vnd(sum(it['amount'] for it in p.items))}")
+        lines.append(f"Итого {fmt_vnd(sum(it['amount'] for it in its))}")
     for pm in p.payments:
         lines.append(f"💸 Погашение: {pm['frm']} → {pm['to']}  {fmt_vnd(pm['amount'])}")
     for t in p.turns:
@@ -47,6 +50,20 @@ def pay_kb(items: list[tuple[int, Transfer]]) -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"✅ {t.frm} → {t.to} оплачено", callback_data=f"pd:{i}")]
         for i, t in items])
+
+
+def pay_menu_kb(items: list[tuple[int, Transfer]]) -> InlineKeyboardMarkup:
+    """Второй экран /balance: переводы по одному плюс «Назад»."""
+    rows = [[InlineKeyboardButton(text=f"✅ {t.frm} → {t.to} оплачено", callback_data=f"pd:{i}")] for i, t in items]
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="pm:back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def balance_kb(has_transfers: bool) -> InlineKeyboardMarkup | None:
+    """Первый экран /balance: одна кнопка, чтобы не промахнуться по конкретному переводу."""
+    if not has_transfers:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💸 Оплачено", callback_data="pm:open")]])
 
 
 def queue_text(next_by_queue: dict[str, str]) -> str:

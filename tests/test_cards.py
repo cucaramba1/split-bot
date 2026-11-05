@@ -110,3 +110,15 @@ def test_stt_empty_key_raises(tmp_path):
 def test_draft_text_shows_payment():
     t = cards.draft_text("Некит", Parsed(payments=[{"frm": "Некит", "to": "Антон", "amount": 50_000}]))
     assert "Некит → Антон" in t and "50" in t
+
+
+def test_draft_text_groups_by_payer():
+    p = Parsed(items=[{"title": "ужин", "amount": 150_000, "split": ALL, "payer": "Антон"},
+                      {"title": "кофе", "amount": 30_000, "split": ALL, "payer": "Некит"}])
+    t = cards.draft_text("Некит", p)
+    assert "Антон заплатил:" in t and "Некит заплатил:" in t and "ужин" in t
+
+
+def test_pay_menu_kb_adds_back_button():
+    kb = cards.pay_menu_kb([(7, Transfer("Антон", "Некит", 40_000))])
+    assert [r[0].callback_data for r in kb.inline_keyboard] == ["pd:7", "pm:back"]

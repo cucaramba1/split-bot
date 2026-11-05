@@ -25,8 +25,9 @@ SCHEMA = {
         "items": {"type": "array", "items": {
             "type": "object",
             "properties": {"title": {"type": "string"}, "amount": {"type": "integer"},
-                           "split": {"type": "array", "items": {"type": "string"}}},
-            "required": ["title", "amount", "split"]}},
+                           "split": {"type": "array", "items": {"type": "string"}},
+                           "payer": {"type": "string"}},
+            "required": ["title", "amount", "split", "payer"]}},
         "turns": {"type": "array", "items": {
             "type": "object",
             "properties": {"queue": {"type": "string", "enum": list(QUEUES)}, "who": {"type": "string"}},
@@ -45,7 +46,7 @@ SYSTEM = """Ты разбираешь сообщение из общего ча�
 Верни JSON строго по схеме.
 
 Правила:
-- items: траты, которые заплатил автор. У каждой title (коротко), amount (целое число в донгах) и split (имена тех, на кого делим).
+- items: общие траты. У каждой title (коротко), amount (целое число в донгах), split (имена тех, на кого делим) и payer (кто заплатил). По умолчанию платил автор. Если автор говорит о чужой трате («Антон потратил 150к», «Полина заплатила за ужин»), payer = тот человек, а не автор, даже если пишет другой.
 - «на троих», «на всех» или без уточнения: split = все трое (Некит, Антон, Полина).
 - «на двоих с X» или «мне и X»: split = автор и X. «X и Y»: split = X и Y.
 - Суммы в донгах целым числом: «120к» = 120000, «1.2 ляма» = 1200000, «сто двадцать тысяч» = 120000.
@@ -89,13 +90,18 @@ def validate(raw: dict, author: str) -> Parsed:
                 question = question or f"Не знаю, кто это: {n}. На кого делим?"
             elif m not in split:
                 split.append(m)
+        payer = _name(it.get("payer", ""), author, empty_is_author=True)
+        if payer is None:
+            bad = True
+            question = question or f"Не знаю, кто заплатил: {it.get('payer')}."
         amount = it.get("amount")
         title = str(it.get("title") or "").strip()
         if not isinstance(amount, int) or amount <= 0 or amount > MAX_AMOUNT:
             question = question or f"Не понял сумму для «{title}». Сколько?"
         elif not bad and len(split) < 2:
             question = question or f"«{title}»: на кого делим?"
-        items.append({"title": title, "amount": amount if isinstance(amount, int) else 0, "split": split})
+        items.append({"title": title, "amount": amount if isinstance(amount, int) else 0, "split": split,
+                      "payer": payer or author})
     for t in raw.get("turns") or []:
         who = _name(t.get("who", ""), author, empty_is_author=True)
         q = t.get("queue")

@@ -87,8 +87,14 @@ class Service:
     # деньги
     def balance(self) -> Reply:
         transfers = settle(net_balances(self.db.all_expenses(), self.db.all_paid()))
-        items = self.db.sync_pay_items(transfers)
-        return Reply(cards.settle_text(transfers), cards.pay_kb(items))
+        self.db.sync_pay_items(transfers)
+        return Reply(cards.settle_text(transfers), cards.balance_kb(bool(transfers)))
+
+    def pay_menu(self) -> Reply | None:
+        transfers = settle(net_balances(self.db.all_expenses(), self.db.all_paid()))
+        if not transfers:
+            return None
+        return Reply("Кто кому оплатил?", cards.pay_menu_kb(self.db.sync_pay_items(transfers)))
 
     def paid(self, tg_id: int, item_id: int) -> str:
         name = self.db.member_name(tg_id)
