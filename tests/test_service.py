@@ -235,3 +235,34 @@ def test_repayment_flow(tmp_path):
     assert "Некит → Полина" in svc.undo_ask(N).text
     assert svc.undo(N, did) == "↩️ Удалено"
     assert net_balances(db.all_expenses(), db.all_paid())["Полина"] == 10_900_000
+
+
+def test_queue_buttons_and_done_flow(tmp_path):
+    svc, db, _ = make(tmp_path)
+    svc.queue_set("bike", "Полина")
+    kb = svc.queue_status().kb
+    assert [b.callback_data for b in kb.inline_keyboard[0]] == ["qv:bike", "qv:water"]
+    v = svc.queue_view("bike")
+    assert "Заправка байка: Полина" in v.text
+    assert v.kb.inline_keyboard[0][0].callback_data == "qd:bike:Полина"
+    assert "Полина" in v.kb.inline_keyboard[0][0].text
+    # чужой тап и нет в чате
+    assert not svc.queue_done(N, "bike", "Полина").startswith("✅")
+    assert not svc.queue_done(STRANGER, "bike", "Полина").startswith("✅")
+    assert "Заправка байка: Полина" in svc.queue_status().text  # чужие тапы очередь не двигают
+    # свой тап двигает очередь, повторный нет
+    res = svc.queue_done(P, "bike", "Полина")
+    assert res.startswith("✅") and "Некит" in res
+    assert "Заправка байка: Некит" in svc.queue_status().text
+    assert not svc.queue_done(P, "bike", "Полина").startswith("✅")
+    assert "Заправка байка: Некит" in svc.queue_status().text
+    # /undo откатывает ход
+    assert "Заправка байка" in svc.undo_ask(P).text
+    did = db.last_saved_draft("Полина")
+    assert svc.undo(P, did) == "↩️ Удалено"
+    assert "Заправка байка: Полина" in svc.queue_status().text
+
+
+def test_queue_view_unknown_queue(tmp_path):
+    svc, _, _ = make(tmp_path)
+    assert svc.queue_view("zzz") is None

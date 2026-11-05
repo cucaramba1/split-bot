@@ -16,15 +16,13 @@ log = logging.getLogger("splitbot.bot")
 FAIL = "Не разобрал, напиши текстом"
 HELP = ("Кидай трату голосом или текстом: «кофе 120к на троих», «чипсы 30к мне с Полиной».\n"
         "Очереди: «заправил байк», «купил воду».\n\n"
-        "/balance: кто кому сколько должен\n/queue: чей ход (байк, вода)\n/undo: удалить свою последнюю запись\n"
-        "/queue_set: задать, чей ход\n/join: зарегистрироваться (один раз)")
+        "/balance: кто кому сколько должен\n/queue: чей ход (байк, вода) и кнопка «выполнил»\n"
+        "/undo: удалить свою последнюю запись")
 
 COMMANDS = [
     BotCommand(command="balance", description="Кто кому сколько должен"),
     BotCommand(command="queue", description="Чей ход: байк и вода"),
     BotCommand(command="undo", description="Удалить свою последнюю запись"),
-    BotCommand(command="queue_set", description="Задать, чей ход"),
-    BotCommand(command="join", description="Зарегистрироваться"),
     BotCommand(command="help", description="Как пользоваться"),
 ]
 
@@ -81,6 +79,24 @@ def build_router(s: Settings, svc: Service) -> Router:
     async def queue(m: Message):
         if me(m):
             await _answer(m, svc.queue_status())
+
+    @r.callback_query(F.data.startswith("qv:"))
+    async def queue_view(c: CallbackQuery):
+        rep = svc.queue_view(c.data[3:]) if me(c) else None
+        if rep is None:
+            return await c.answer()
+        try:
+            await c.message.edit_text(rep.text, reply_markup=rep.kb)
+        except TelegramBadRequest as e:  # повторный тап: текст тот же
+            log.info("очередь не обновить: %s", e)
+        await c.answer()
+
+    @r.callback_query(F.data.startswith("qd:"))
+    async def queue_done(c: CallbackQuery):
+        parts = c.data.split(":", 2)
+        if len(parts) != 3:
+            return await c.answer()
+        await _finish(c, svc.queue_done(c.from_user.id, parts[1], parts[2]))
 
     @r.message(Command("queue_set"))
     async def queue_set(m: Message):

@@ -107,7 +107,32 @@ class Service:
         return next_turn(self.db.queue_counts(queue), self.db.queue_last(queue))
 
     def queue_status(self) -> Reply:
-        return Reply(cards.queue_text({q: self._next(q) for q in QUEUES}))
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text=title, callback_data=f"qv:{q}") for q, title in QUEUES.items()]])
+        return Reply(cards.queue_text({q: self._next(q) for q in QUEUES}), kb)
+
+    def queue_view(self, queue: str) -> Reply | None:
+        if queue not in QUEUES:
+            return None
+        who = self._next(queue)
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text=f"✅ {who} выполнил", callback_data=f"qd:{queue}:{who}")]])
+        return Reply(f"{QUEUES[queue]}: {who}", kb)
+
+    def queue_done(self, tg_id: int, queue: str, who: str) -> str:
+        """Кнопка «выполнил»: ход засчитывается через обычный черновик, поэтому /undo его откатит."""
+        name = self.db.member_name(tg_id)
+        if queue not in QUEUES or name is None:
+            return "Не понял"
+        current = self._next(queue)
+        if current != who:
+            return f"Уже выполнено. Сейчас ход: {current}"
+        if name != who:
+            return f"Это ход {who}, не твой"
+        did = self.db.create_draft(name, {"payer": name, "items": [], "turns": [{"queue": queue, "who": name}],
+                                          "payments": [], "question": None})
+        self.db.save_draft(did)
+        return f"✅ {name}: {QUEUES[queue].lower()} выполнена. Следующий: {self._next(queue)}"
 
     def queue_set(self, queue: str, name: str) -> Reply:
         self.db.seed_queue(queue, cycle_from(name))
