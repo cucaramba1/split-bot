@@ -103,6 +103,28 @@ class Service:
             return "Уже отмечено или это не твой перевод"
         return f"✅ {t.frm} → {t.to}: {fmt_vnd(t.amount)} оплачено"
 
+    def pay_amount_menu(self, tg_id: int, item_id: int) -> Reply | None:
+        """Третий экран /balance: сколько оплачено (всё или половина, другую сумму говорят словами)."""
+        t = self.db.get_pay_item(item_id)
+        if t is None or self.db.member_name(tg_id) not in (t.frm, t.to):
+            return None
+        rows = [[InlineKeyboardButton(text=f"✅ Всё: {fmt_vnd(t.amount)}", callback_data=f"pf:{item_id}")]]
+        if t.amount // 2 > 0:
+            rows.append([InlineKeyboardButton(text=f"½ Половину: {fmt_vnd(t.amount // 2)}",
+                                              callback_data=f"ph:{item_id}")])
+        rows.append([InlineKeyboardButton(text="✏️ Другая сумма", callback_data="pm:other")])
+        rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="pm:open")])
+        return Reply(f"{t.frm} → {t.to}: {fmt_vnd(t.amount)}", InlineKeyboardMarkup(inline_keyboard=rows))
+
+    def pay_half(self, tg_id: int, item_id: int) -> tuple[str, int | None]:
+        name = self.db.member_name(tg_id)
+        t = self.db.get_pay_item(item_id)
+        res = self.db.pay_part(item_id, name, t.amount // 2) if name and t else None
+        if res is None:
+            return "Уже отмечено или это не твой перевод", None
+        part, new_id = res
+        return f"✅ {part.frm} → {part.to}: {fmt_vnd(part.amount)} оплачено (осталось {fmt_vnd(t.amount - part.amount)})", new_id
+
     def unpaid(self, tg_id: int, item_id: int) -> str:
         name = self.db.member_name(tg_id)
         if not name or not self.db.unmark_paid(item_id, name):

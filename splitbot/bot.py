@@ -168,23 +168,42 @@ def build_router(s: Settings, svc: Service) -> Router:
 
     @r.callback_query(F.data.startswith("pd:"))
     async def pd(c: CallbackQuery):
-        res = svc.paid(c.from_user.id, int(c.data[3:]))
-        if res.startswith("✅"):
-            undo_kb = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="↩️ Не оплачено", callback_data=f"up:{c.data[3:]}")]])
-            await c.message.answer(res, reply_markup=undo_kb)  # ошибочный тап можно снять
-            kb = c.message.reply_markup
-            rows = [row for row in (kb.inline_keyboard if kb else []) if row[0].callback_data != c.data]
-            if all(row[0].callback_data.startswith("pm:") for row in rows):
-                rows = []  # остался один «Назад»: переводов больше нет
-            try:
-                await c.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
-                                                  if rows else None)
-            except TelegramBadRequest as e:
-                log.warning("кнопки не обновить: %s", e)
-            await c.answer()
-        else:
-            await c.answer(res, show_alert=True)
+        """Тап по переводу открывает выбор суммы, ничего не записывая."""
+        rep = svc.pay_amount_menu(c.from_user.id, int(c.data[3:])) if me(c) else None
+        if rep is None:
+            return await c.answer("Уже отмечено или это не твой перевод", show_alert=True)
+        try:
+            await c.message.edit_reply_markup(reply_markup=rep.kb)
+        except TelegramBadRequest as e:
+            log.info("кнопки не обновить: %s", e)
+        await c.answer(rep.text)
+
+    @r.callback_query(F.data == "pm:other")
+    async def pay_other(c: CallbackQuery):
+        await c.answer("Напиши или надиктуй в чат, например: «отдал Антону 25к»", show_alert=True)
+
+    async def _paid_done(c: CallbackQuery, res: str, undo_id: int) -> None:
+        if not res.startswith("✅"):
+            return await c.answer(res, show_alert=True)
+        undo_kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="↩️ Не оплачено", callback_data=f"up:{undo_id}")]])
+        await c.message.answer(res, reply_markup=undo_kb)  # ошибочный тап можно снять
+        rep = svc.pay_menu()  # остаток пересчитан: показываем актуальный список или убираем кнопки
+        try:
+            await c.message.edit_reply_markup(reply_markup=rep.kb if rep else None)
+        except TelegramBadRequest as e:
+            log.warning("кнопки не обновить: %s", e)
+        await c.answer()
+
+    @r.callback_query(F.data.startswith("pf:"))
+    async def pay_full(c: CallbackQuery):
+        item = int(c.data[3:])
+        await _paid_done(c, svc.paid(c.from_user.id, item), item)
+
+    @r.callback_query(F.data.startswith("ph:"))
+    async def pay_half(c: CallbackQuery):
+        res, new_id = svc.pay_half(c.from_user.id, int(c.data[3:]))
+        await _paid_done(c, res, new_id or 0)
 
     @r.callback_query(F.data.startswith("up:"))
     async def up(c: CallbackQuery):

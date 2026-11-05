@@ -151,3 +151,30 @@ def test_old_db_without_draft_id_column_migrates(tmp_path):
     c.close()
     db = DB(p)
     assert db.all_paid() == [Transfer("Антон", "Некит", 1000)]
+
+
+def _debt(db):
+    db.add_opening_debt("Антон", "Некит", 40_000)
+    return db.sync_pay_items([Transfer("Антон", "Некит", 40_000)])[0][0]
+
+
+def test_pay_part_reduces_debt_and_can_be_unmarked(tmp_path):
+    from splitbot.money import net_balances, settle
+    db = mk(tmp_path)
+    item = _debt(db)
+    res = db.pay_part(item, "Антон", 15_000)
+    assert res is not None and res[0] == Transfer("Антон", "Некит", 15_000)
+    assert settle(net_balances(db.all_expenses(), db.all_paid())) == [Transfer("Антон", "Некит", 25_000)]
+    assert db.unmark_paid(res[1], "Некит") is True  # получатель тоже может снять
+    assert settle(net_balances(db.all_expenses(), db.all_paid())) == [Transfer("Антон", "Некит", 40_000)]
+
+
+def test_pay_part_rejects_bad_input(tmp_path):
+    db = mk(tmp_path)
+    item = _debt(db)
+    assert db.pay_part(item, "Полина", 10_000) is None      # не из пары
+    assert db.pay_part(item, "Антон", 0) is None
+    assert db.pay_part(item, "Антон", 40_000) is None       # целиком через mark_paid
+    assert db.pay_part(item, "Антон", 50_000) is None
+    assert db.pay_part(999, "Антон", 1_000) is None
+    assert db.get_pay_item(item) == Transfer("Антон", "Некит", 40_000)

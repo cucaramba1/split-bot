@@ -205,6 +205,21 @@ class DB:
                 return None
         return Transfer(r["frm"], r["to_"], r["amount"])
 
+    def get_pay_item(self, item_id: int) -> Transfer | None:
+        """Неоплаченный перевод по id."""
+        r = self.c.execute("SELECT * FROM pay_items WHERE id=? AND paid_by IS NULL", (item_id,)).fetchone()
+        return Transfer(r["frm"], r["to_"], r["amount"]) if r else None
+
+    def pay_part(self, item_id: int, by: str, amount: int) -> tuple[Transfer, int] | None:
+        """Частичная оплата: отдельная оплаченная строка на меньшую сумму. Остаток пересчитает /balance."""
+        with self.c:
+            r = self.c.execute("SELECT * FROM pay_items WHERE id=? AND paid_by IS NULL", (item_id,)).fetchone()
+            if not r or by not in (r["frm"], r["to_"]) or not 0 < amount < r["amount"]:
+                return None
+            cur = self.c.execute("INSERT INTO pay_items(frm, to_, amount, paid_by, paid_at) VALUES(?,?,?,?,?)",
+                                 (r["frm"], r["to_"], amount, by, _now()))
+        return Transfer(r["frm"], r["to_"], amount), cur.lastrowid
+
     def unmark_paid(self, item_id: int, by: str) -> bool:
         """Снять ошибочную отметку «оплачено»; может тот, кто платит, или тот, кто получает."""
         with self.c:

@@ -291,3 +291,26 @@ def test_expense_paid_by_another_person(tmp_path):
     assert net == {"Некит": -50_000, "Антон": 100_000, "Полина": -50_000}
     assert svc.undo(N, did) == "↩️ Удалено"
     assert db.all_expenses() == []
+
+
+def test_partial_payment_flow(tmp_path):
+    svc, db, _ = make(tmp_path)
+    _, did = draft(svc)
+    svc.confirm(N, did)
+    svc.balance()
+    menu = svc.pay_menu()
+    item = next(int(b.callback_data[3:]) for row in menu.kb.inline_keyboard for b in row if "Антон → Некит" in b.text)
+    scr = svc.pay_amount_menu(P, item)
+    assert scr is None                                   # Полина не из пары
+    scr = svc.pay_amount_menu(A, item)
+    cbs = {b.callback_data: b.text for row in scr.kb.inline_keyboard for b in row}
+    assert f"pf:{item}" in cbs and "40 000" in cbs[f"pf:{item}"]
+    assert f"ph:{item}" in cbs and "20 000" in cbs[f"ph:{item}"]
+    assert "pm:open" in cbs
+    msg, new_id = svc.pay_half(A, item)
+    assert msg.startswith("✅") and "20 000" in msg and new_id is not None
+    assert "Антон → Некит: 20 000" in svc.balance().text
+    assert svc.unpaid(N, new_id).startswith("↩️")
+    assert "Антон → Некит: 40 000" in svc.balance().text
+    # чужой и повторный тап
+    assert svc.pay_half(P, item)[1] is None
