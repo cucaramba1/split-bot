@@ -245,7 +245,8 @@ def test_queue_buttons_and_done_flow(tmp_path):
     v = svc.queue_view("bike")
     assert "Заправка байка: Полина" in v.text
     assert v.kb.inline_keyboard[0][0].callback_data == "qd:bike:Полина"
-    assert "Полина" in v.kb.inline_keyboard[0][0].text
+    assert v.kb.inline_keyboard[0][0].text == "✅ Полина выполнила"
+    assert svc.queue_view("water").kb.inline_keyboard[0][0].text.endswith("выполнил")
     # чужой тап и нет в чате
     assert not svc.queue_done(N, "bike", "Полина").startswith("✅")
     assert not svc.queue_done(STRANGER, "bike", "Полина").startswith("✅")

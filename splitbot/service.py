@@ -14,6 +14,7 @@ from splitbot.parser import Parsed, should_parse
 from splitbot.queues import cycle_from, next_turn
 
 NOT_YOURS = "Это не твоя трата"
+DONE_VERB = {"Полина": "выполнила"}  # остальные участники мужского рода
 
 
 @dataclass
@@ -116,7 +117,7 @@ class Service:
             return None
         who = self._next(queue)
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=f"✅ {who} выполнил", callback_data=f"qd:{queue}:{who}")]])
+            InlineKeyboardButton(text=f"✅ {who} {DONE_VERB.get(who, 'выполнил')}", callback_data=f"qd:{queue}:{who}")]])
         return Reply(f"{QUEUES[queue]}: {who}", kb)
 
     def queue_done(self, tg_id: int, queue: str, who: str) -> str:
